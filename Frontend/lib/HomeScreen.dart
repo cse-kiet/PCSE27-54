@@ -22,6 +22,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool _sosActive = false;
   final _sosService = SosService();
 
+  // Keyword-triggered SOS countdown (shown on SOS button)
+  int _sosCountdown = 0;
+  Timer? _sosCountdownTimer;
+  Timer? _vibrationTimer;
+
+  // Manual SOS countdown
+  int _manualCountdown = 0;
+  Timer? _manualTimer;
+
   // Safety timer
   int _timerSeconds = 300; // default 5 min
   int _remaining = 0;
@@ -62,6 +71,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void dispose() {
     for (final c in _waveControllers) c.dispose();
     _countdownTimer?.cancel();
+    _manualTimer?.cancel();
+    _sosCountdownTimer?.cancel();
+    _vibrationTimer?.cancel();
     _sosService.stopListening();
     super.dispose();
   }
@@ -83,28 +95,57 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _onKeywordDetected() {
+    if (!mounted) return;
+    if (_sosCountdown > 0) return;
     _sosService.stopListening();
-    setState(() => _sosActive = false);
-    _sosService.sendSosAlert(
-      '🚨 SOS ALERT! A distress keyword was detected. I need immediate help!',
-    );
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('🚨 Distress Detected'),
-        content: const Text('A distress keyword was detected. Alert sent to your trusted contacts.'),
-        actions: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE91E8C)),
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
+
+    // Must run on UI thread
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() => _sosCountdown = 10);
+
+      _sosCountdownTimer?.cancel();
+      _vibrationTimer?.cancel();
+
+      // Vibrate immediately, then every second
+      HapticFeedback.heavyImpact();
+      _vibrationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        HapticFeedback.heavyImpact();
+      });
+
+      _sosCountdownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+        if (!mounted) { t.cancel(); return; }
+        setState(() {
+          if (_sosCountdown <= 1) {
+            t.cancel();
+            _vibrationTimer?.cancel();
+            _sosCountdown = 0;
+            _sosService.sendSosAlert(
+              '🚨 SOS ALERT! A distress keyword was detected. I need immediate help!',
+            ).then((success) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(success
+                    ? '🚨 SOS alert sent to your contacts!'
+                    : '❌ Failed to send SOS. Check your connection.'),
+                backgroundColor:
+                    success ? const Color(0xFFE91E8C) : Colors.red.shade800,
+              ));
+            });
+          } else {
+            _sosCountdown--;
+          }
+        });
+      });
+    });
+  }
+
+  void _cancelSosCountdown() {
+    _sosCountdownTimer?.cancel();
+    _vibrationTimer?.cancel();
+    setState(() => _sosCountdown = 0);
+    // Resume listening
+    _sosService.startListening(onKeywordDetected: _onKeywordDetected);
   }
 
   void _startTimer() {
@@ -221,6 +262,39 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
+  void _triggerManualSos() {
+    setState(() => _manualCountdown = 5);
+    _manualTimer?.cancel();
+    _manualTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) { t.cancel(); return; }
+      if (_manualCountdown <= 1) {
+        t.cancel();
+        setState(() => _manualCountdown = 0);
+        _sosService.sendSosAlert(
+          '🚨 MANUAL SOS! I manually triggered an emergency alert. Please help immediately!',
+        ).then((success) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(success
+                  ? '🚨 Manual SOS alert sent!'
+                  : '❌ Failed to send SOS. Check your connection.'),
+              backgroundColor:
+                  success ? const Color(0xFFE91E8C) : Colors.red.shade800,
+            ),
+          );
+        });
+      } else {
+        setState(() => _manualCountdown--);
+      }
+    });
+  }
+
+  void _cancelManualSos() {
+    _manualTimer?.cancel();
+    setState(() => _manualCountdown = 0);
+  }
+
   String _formatTime(int seconds) {
     final m = (seconds ~/ 60).toString().padLeft(2, '0');
     final s = (seconds % 60).toString().padLeft(2, '0');
@@ -334,9 +408,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               height: h * 0.22 * (0.5 + value * 0.5),
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: (_sosActive
-                                        ? const Color(0xFF4CAF50)
-                                        : const Color(0xFFE91E8C))
+                                color: (_sosCountdown > 0
+                                        ? Colors.deepOrange
+                                        : _sosActive
+                                            ? const Color(0xFF4CAF50)
+                                            : const Color(0xFFE91E8C))
                                     .withOpacity((1 - value) * 0.35),
                               ),
                             );
@@ -344,7 +420,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         );
                       }),
                       GestureDetector(
-                        onTap: _toggleSOS,
+                        onTap: _sosCountdown > 0 ? _cancelSosCountdown : _toggleSOS,
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 300),
                           width: h * 0.13,
@@ -354,49 +430,127 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             gradient: LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
-                              colors: _sosActive
-                                  ? [
-                                      const Color(0xFF66BB6A),
-                                      const Color(0xFF4CAF50)
-                                    ]
-                                  : [
-                                      const Color(0xFFFF6B9D),
-                                      const Color(0xFFE91E8C)
-                                    ],
+                              colors: _sosCountdown > 0
+                                  ? [Colors.orange.shade400, Colors.deepOrange]
+                                  : _sosActive
+                                      ? [const Color(0xFF66BB6A), const Color(0xFF4CAF50)]
+                                      : [const Color(0xFFFF6B9D), const Color(0xFFE91E8C)],
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: (_sosActive
-                                        ? const Color(0xFF4CAF50)
-                                        : const Color(0xFFE91E8C))
+                                color: (_sosCountdown > 0
+                                        ? Colors.deepOrange
+                                        : _sosActive
+                                            ? const Color(0xFF4CAF50)
+                                            : const Color(0xFFE91E8C))
                                     .withOpacity(0.5),
                                 blurRadius: 20,
                                 spreadRadius: 2,
                               ),
                             ],
                           ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text('SOS',
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: h * 0.028,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 2)),
-                              Text('EMERGENCY',
-                                  style: TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: h * 0.011,
-                                      fontWeight: FontWeight.w600,
-                                      letterSpacing: 1)),
-                            ],
-                          ),
+                          child: _sosCountdown > 0
+                              ? Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text('$_sosCountdown',
+                                        style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: h * 0.038,
+                                            fontWeight: FontWeight.w900)),
+                                    Text('TAP TO CANCEL',
+                                        style: TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: h * 0.009,
+                                            fontWeight: FontWeight.w600,
+                                            letterSpacing: 0.8)),
+                                  ],
+                                )
+                              : Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text('SOS',
+                                        style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: h * 0.028,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: 2)),
+                                    Text('EMERGENCY',
+                                        style: TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: h * 0.011,
+                                            fontWeight: FontWeight.w600,
+                                            letterSpacing: 1)),
+                                  ],
+                                ),
                         ),
                       ),
                     ],
                   ),
                 ),
+              ),
+
+              SizedBox(height: h * 0.016),
+
+              // Manual SOS Button
+              Center(
+                child: _manualCountdown > 0
+                    ? GestureDetector(
+                        onTap: _cancelManualSos,
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: h * 0.03, vertical: h * 0.012),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(30),
+                            border: Border.all(color: Colors.orange, width: 1.5),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.cancel_outlined,
+                                  color: Colors.orange, size: h * 0.022),
+                              SizedBox(width: h * 0.008),
+                              Text(
+                                'Sending in $_manualCountdown s... Tap to Cancel',
+                                style: TextStyle(
+                                    color: Colors.orange,
+                                    fontSize: h * 0.014,
+                                    fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : GestureDetector(
+                        onTap: _triggerManualSos,
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: h * 0.03, vertical: h * 0.012),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE91E8C).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(30),
+                            border: Border.all(
+                                color: const Color(0xFFE91E8C), width: 1.5),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.warning_amber_rounded,
+                                  color: const Color(0xFFE91E8C),
+                                  size: h * 0.022),
+                              SizedBox(width: h * 0.008),
+                              Text(
+                                'Manual SOS',
+                                style: TextStyle(
+                                    color: const Color(0xFFE91E8C),
+                                    fontSize: h * 0.014,
+                                    fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
               ),
 
               SizedBox(height: h * 0.025),
