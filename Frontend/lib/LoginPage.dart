@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'auth.dart';
 
 class LoginPage extends StatefulWidget {
@@ -10,217 +9,280 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  late FocusNode _phoneFocusNode;
-  late ScrollController _scrollController;
-  final GlobalKey _phoneFieldKey = GlobalKey();
-
-  @override
-  void initState() {
-    super.initState();
-    _phoneFocusNode = FocusNode();
-    _scrollController = ScrollController();
-    _phoneFocusNode.addListener(_scrollToPhoneField);
-  }
+  final _formKey = GlobalKey<FormState>();
+  final _nameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  bool _isLogin = true;
+  bool _isLoading = false;
 
   @override
   void dispose() {
-    _phoneFocusNode.removeListener(_scrollToPhoneField);
-    _phoneFocusNode.dispose();
-    _scrollController.dispose();
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
     super.dispose();
   }
 
-  void _scrollToPhoneField() {
-    if (_phoneFocusNode.hasFocus) {
-      Future.delayed(const Duration(milliseconds: 300), () {
-        final ctx = _phoneFieldKey.currentContext;
-        if (ctx != null) {
-          Scrollable.ensureVisible(
-            ctx,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-            alignment: 0.8, // scroll so field appears near bottom
-          );
-        }
-      });
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isLoading = true);
+    try {
+      if (_isLogin) {
+        await AuthService.login(
+          context: context,
+          email: _emailCtrl.text.trim(),
+        );
+      } else {
+        await AuthService.register(
+          context: context,
+          name: _nameCtrl.text.trim(),
+          email: _emailCtrl.text.trim(),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _toggle() {
+    setState(() {
+      _isLogin = !_isLogin;
+      _formKey.currentState?.reset();
+      _nameCtrl.clear();
+      _emailCtrl.clear();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final h = MediaQuery.of(context).size.height;
 
-    return AuthLoadingWrapper(
-      child: Scaffold(
-        backgroundColor: Colors.white,
-        // Keep true so the scaffold shrinks when the keyboard appears,
-        // giving SingleChildScrollView room to scroll up
-        resizeToAvoidBottomInset: true,
-        body: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              controller: _scrollController,
-              // Ensures the Column fills at least the visible screen height,
-              // so content doesn't collapse at the top when keyboard is hidden
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // 60% image section — uses a fixed fraction of screen height,
-                    // not the layout height, so it stays stable as keyboard opens
-                    SizedBox(
-                      height: h * 0.6,
-                      width: double.infinity,
-                      child: Image.asset(
-                        'assets/images/login_banner.jpeg',
-                        fit: BoxFit.cover,
+    return Scaffold(
+      backgroundColor: Colors.white,
+      resizeToAvoidBottomInset: true,
+      body: Stack(
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints:
+                      BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Banner image
+                      SizedBox(
+                        height: h * 0.45,
+                        width: double.infinity,
+                        child: Image.asset(
+                          'assets/images/login_banner.jpeg',
+                          fit: BoxFit.cover,
+                        ),
                       ),
-                    ),
 
-                    // Bottom content
-                    Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: h * 0.03,
-                        vertical: h * 0.04,
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Google Sign-In Button
-                          SizedBox(
-                            width: double.infinity,
-                            height: h * 0.065,
-                            child: ElevatedButton(
-                              onPressed: () async {
-                                await AuthService.signInWithGoogle(context);
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFE91E8C),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(h * 0.012),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Container(
-                                    height: h * 0.03,
-                                    width: h * 0.03,
-                                    decoration: const BoxDecoration(
-                                      color: Colors.white,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    alignment: Alignment.center,
-                                  ),
-                                  SizedBox(width: h * 0.015),
-                                  Text(
-                                    'Continue with Google',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: h * 0.02,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-
-                          SizedBox(height: h * 0.02),
-
-                          // --- Or --- divider
-                          Row(
+                      Padding(
+                        padding: EdgeInsets.symmetric(
+                            horizontal: h * 0.03, vertical: h * 0.03),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Expanded(child: Divider(thickness: 1)),
-                              Padding(
-                                padding: EdgeInsets.symmetric(
-                                    horizontal: h * 0.015),
-                                child: Text(
-                                  'Or',
-                                  style: TextStyle(
-                                    color: Colors.grey,
-                                    fontSize: h * 0.018,
+                              Text(
+                                _isLogin
+                                    ? 'Welcome Back 👋'
+                                    : 'Create Account ✨',
+                                style: TextStyle(
+                                    fontSize: h * 0.028,
+                                    fontWeight: FontWeight.bold,
+                                    color: const Color(0xFF1A1A2E)),
+                              ),
+                              SizedBox(height: h * 0.005),
+                              Text(
+                                _isLogin
+                                    ? 'Sign in to continue'
+                                    : 'Register to get started',
+                                style: TextStyle(
+                                    fontSize: h * 0.016,
+                                    color: Colors.grey),
+                              ),
+
+                              SizedBox(height: h * 0.025),
+
+                              // Name — register only
+                              if (!_isLogin) ...[
+                                _buildField(
+                                  controller: _nameCtrl,
+                                  hint: 'Full Name',
+                                  icon: Icons.person_outline_rounded,
+                                  h: h,
+                                  validator: (v) =>
+                                      v == null || v.trim().isEmpty
+                                          ? 'Enter your name'
+                                          : null,
+                                ),
+                                SizedBox(height: h * 0.018),
+                              ],
+
+                              // Email
+                              _buildField(
+                                controller: _emailCtrl,
+                                hint: 'Email Address',
+                                icon: Icons.email_outlined,
+                                h: h,
+                                keyboardType: TextInputType.emailAddress,
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty)
+                                    return 'Enter your email';
+                                  if (!v.contains('@'))
+                                    return 'Enter a valid email';
+                                  return null;
+                                },
+                              ),
+
+                              SizedBox(height: h * 0.025),
+
+                              // Submit button
+                              SizedBox(
+                                width: double.infinity,
+                                height: h * 0.065,
+                                child: ElevatedButton(
+                                  onPressed: _isLoading ? null : _submit,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor:
+                                        const Color(0xFFE91E8C),
+                                    disabledBackgroundColor:
+                                        const Color(0xFFE91E8C)
+                                            .withOpacity(0.7),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(
+                                                h * 0.012)),
+                                  ),
+                                  child: _isLoading
+                                      ? SizedBox(
+                                          height: h * 0.028,
+                                          width: h * 0.028,
+                                          child:
+                                              const CircularProgressIndicator(
+                                            color: Colors.white,
+                                            strokeWidth: 2.5,
+                                          ),
+                                        )
+                                      : Text(
+                                          _isLogin ? 'Login' : 'Register',
+                                          style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: h * 0.02,
+                                              fontWeight:
+                                                  FontWeight.w600),
+                                        ),
+                                ),
+                              ),
+
+                              SizedBox(height: h * 0.02),
+
+                              // Toggle
+                              Center(
+                                child: GestureDetector(
+                                  onTap: _isLoading ? null : _toggle,
+                                  child: RichText(
+                                    text: TextSpan(
+                                      style:
+                                          TextStyle(fontSize: h * 0.016),
+                                      children: [
+                                        TextSpan(
+                                          text: _isLogin
+                                              ? "Don't have an account? "
+                                              : 'Already have an account? ',
+                                          style: const TextStyle(
+                                              color: Colors.grey),
+                                        ),
+                                        TextSpan(
+                                          text: _isLogin
+                                              ? 'Register'
+                                              : 'Login',
+                                          style: const TextStyle(
+                                              color: Color(0xFFE91E8C),
+                                              fontWeight:
+                                                  FontWeight.w600),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
-                              const Expanded(child: Divider(thickness: 1)),
+
+                              SizedBox(height: h * 0.02),
                             ],
                           ),
-
-                          SizedBox(height: h * 0.02),
-
-                          // Phone number input — keyed so ensureVisible can find it
-                          TextFormField(
-                            key: _phoneFieldKey,
-                            focusNode: _phoneFocusNode,
-                            keyboardType: TextInputType.phone,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                              LengthLimitingTextInputFormatter(10),
-                            ],
-                            style: TextStyle(fontSize: h * 0.02),
-                            decoration: InputDecoration(
-                              hintText: 'Enter phone number',
-                              hintStyle: TextStyle(fontSize: h * 0.018),
-                              contentPadding: EdgeInsets.symmetric(
-                                  vertical: h * 0.018),
-                              prefixIcon: Padding(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: h * 0.015,
-                                  vertical: h * 0.015,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text('🇮🇳',
-                                        style:
-                                            TextStyle(fontSize: h * 0.025)),
-                                    SizedBox(width: h * 0.008),
-                                    Text(
-                                      '+91',
-                                      style: TextStyle(
-                                        fontSize: h * 0.02,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                    SizedBox(width: h * 0.01),
-                                    SizedBox(
-                                      height: h * 0.03,
-                                      child: const VerticalDivider(
-                                        thickness: 1,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius:
-                                    BorderRadius.circular(h * 0.012),
-                                borderSide:
-                                    const BorderSide(color: Colors.grey),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius:
-                                    BorderRadius.circular(h * 0.012),
-                                borderSide:
-                                    const BorderSide(color: Colors.grey),
-                              ),
-                            ),
-                          ),
-
-                          // Bottom padding so the field isn't flush against
-                          // the keyboard on very small devices
-                          SizedBox(height: h * 0.03),
-                        ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
+
+          // Full screen loading overlay
+          if (_isLoading)
+            const Opacity(
+              opacity: 0.3,
+              child: ModalBarrier(dismissible: false, color: Colors.black),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildField({
+    required TextEditingController controller,
+    required String hint,
+    required IconData icon,
+    required double h,
+    TextInputType keyboardType = TextInputType.text,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      style: TextStyle(fontSize: h * 0.018),
+      validator: validator,
+      enabled: !_isLoading,
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle:
+            TextStyle(color: Colors.grey, fontSize: h * 0.016),
+        prefixIcon:
+            Icon(icon, color: Colors.grey, size: h * 0.022),
+        contentPadding:
+            EdgeInsets.symmetric(vertical: h * 0.018),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(h * 0.012),
+          borderSide: const BorderSide(color: Colors.grey),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(h * 0.012),
+          borderSide: BorderSide(color: Colors.grey.shade300),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(h * 0.012),
+          borderSide: const BorderSide(
+              color: Color(0xFFE91E8C), width: 1.5),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(h * 0.012),
+          borderSide: const BorderSide(color: Colors.red),
         ),
       ),
     );

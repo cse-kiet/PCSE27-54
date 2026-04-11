@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'session_manager.dart';
+import 'auth.dart';
 
 class SettingScreen extends StatefulWidget {
   const SettingScreen({super.key});
@@ -12,6 +14,77 @@ class _SettingScreenState extends State<SettingScreen> {
   bool _locationSharing = true;
   bool _nightAlerts = false;
   bool _notifications = true;
+
+  String _userName = '';
+  String _userEmail = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUser();
+  }
+
+  Future<void> _loadUser() async {
+    final user = await SessionManager.getUser();
+    if (mounted && user != null) {
+      setState(() {
+        _userName = user['name'] ?? '';
+        _userEmail = user['email'] ?? '';
+      });
+    }
+  }
+
+  Future<void> _confirmLogout() async {
+    final h = MediaQuery.of(context).size.height;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: EdgeInsets.all(h * 0.01),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.logout_rounded, color: Colors.red, size: h * 0.026),
+            ),
+            SizedBox(width: h * 0.012),
+            Text('Logout',
+                style: TextStyle(
+                    fontSize: h * 0.022, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to logout from StreeHelp?',
+          style: TextStyle(fontSize: h * 0.016, color: Colors.grey.shade600),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel',
+                style: TextStyle(
+                    color: Colors.grey.shade600, fontSize: h * 0.016)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Logout',
+                style:
+                    TextStyle(color: Colors.white, fontSize: h * 0.016)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await AuthService.signOut(context);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,9 +108,9 @@ class _SettingScreenState extends State<SettingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Profile card
+            // ── Profile card ──────────────────────────────────────────────
             Container(
-              padding: EdgeInsets.all(h * 0.02),
+              padding: EdgeInsets.all(h * 0.022),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                     colors: [Color(0xFFE91E8C), Color(0xFFFF6B9D)]),
@@ -52,46 +125,46 @@ class _SettingScreenState extends State<SettingScreen> {
               child: Row(
                 children: [
                   CircleAvatar(
-                    radius: h * 0.035,
-                    backgroundColor: Colors.white.withOpacity(0.3),
-                    child: Icon(Icons.person_rounded,
-                        color: Colors.white, size: h * 0.04),
+                    radius: h * 0.036,
+                    backgroundColor: Colors.white.withOpacity(0.25),
+                    child: Text(
+                      _userName.isNotEmpty
+                          ? _userName[0].toUpperCase()
+                          : '?',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: h * 0.032,
+                          fontWeight: FontWeight.bold),
+                    ),
                   ),
                   SizedBox(width: w * 0.04),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Anjali Singh',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontSize: h * 0.022,
-                                fontWeight: FontWeight.bold)),
-                        Text('+91 98765 43210',
-                            style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: h * 0.015)),
+                        Text(
+                          _userName.isNotEmpty ? _userName : 'Loading...',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: h * 0.022,
+                              fontWeight: FontWeight.bold),
+                        ),
+                        SizedBox(height: h * 0.004),
+                        Text(
+                          _userEmail.isNotEmpty ? _userEmail : '',
+                          style: TextStyle(
+                              color: Colors.white70, fontSize: h * 0.014),
+                        ),
                       ],
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () {},
-                    child: Container(
-                      padding: EdgeInsets.all(h * 0.01),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(Icons.edit_rounded,
-                          color: Colors.white, size: h * 0.022),
                     ),
                   ),
                 ],
               ),
             ),
 
-            SizedBox(height: h * 0.025),
+            SizedBox(height: h * 0.028),
 
+            // ── Safety Settings ───────────────────────────────────────────
             _SectionLabel(label: 'Safety Settings', h: h),
             SizedBox(height: h * 0.01),
             _ToggleTile(
@@ -130,15 +203,10 @@ class _SettingScreenState extends State<SettingScreen> {
               onChanged: (v) => setState(() => _notifications = v),
             ),
 
-            SizedBox(height: h * 0.025),
+            SizedBox(height: h * 0.028),
 
+            // ── Account ───────────────────────────────────────────────────
             _SectionLabel(label: 'Account', h: h),
-            SizedBox(height: h * 0.01),
-            _ActionTile(
-                icon: Icons.lock_outline_rounded,
-                title: 'Change Password',
-                color: const Color(0xFF4CAF50),
-                onTap: () {}),
             SizedBox(height: h * 0.01),
             _ActionTile(
                 icon: Icons.help_outline_rounded,
@@ -151,12 +219,44 @@ class _SettingScreenState extends State<SettingScreen> {
                 title: 'Privacy Policy',
                 color: const Color(0xFF9C27B0),
                 onTap: () {}),
-            SizedBox(height: h * 0.01),
-            _ActionTile(
-                icon: Icons.logout_rounded,
-                title: 'Logout',
-                color: Colors.red,
-                onTap: () {}),
+
+            SizedBox(height: h * 0.028),
+
+            // ── Logout button ─────────────────────────────────────────────
+            GestureDetector(
+              onTap: _confirmLogout,
+              child: Container(
+                width: double.infinity,
+                padding: EdgeInsets.symmetric(vertical: h * 0.02),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.red.withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.logout_rounded,
+                        color: Colors.red, size: h * 0.024),
+                    SizedBox(width: h * 0.01),
+                    Text('Logout',
+                        style: TextStyle(
+                            color: Colors.red,
+                            fontSize: h * 0.017,
+                            fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ),
+
+            SizedBox(height: h * 0.015),
+
+            // App version
+            Center(
+              child: Text('StreeHelp v1.0.0',
+                  style: TextStyle(
+                      fontSize: h * 0.013, color: Colors.grey.shade400)),
+            ),
 
             SizedBox(height: h * 0.03),
           ],
@@ -233,8 +333,8 @@ class _ToggleTile extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                         color: const Color(0xFF1A1A2E))),
                 Text(subtitle,
-                    style: TextStyle(
-                        fontSize: h * 0.013, color: Colors.grey)),
+                    style:
+                        TextStyle(fontSize: h * 0.013, color: Colors.grey)),
               ],
             ),
           ),
@@ -295,9 +395,7 @@ class _ActionTile extends StatelessWidget {
                   style: TextStyle(
                       fontSize: h * 0.016,
                       fontWeight: FontWeight.w600,
-                      color: title == 'Logout'
-                          ? Colors.red
-                          : const Color(0xFF1A1A2E))),
+                      color: const Color(0xFF1A1A2E))),
             ),
             Icon(Icons.chevron_right_rounded,
                 color: Colors.grey.shade400, size: h * 0.025),

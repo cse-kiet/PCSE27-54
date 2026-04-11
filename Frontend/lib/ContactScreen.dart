@@ -1,4 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'api_config.dart';
+import 'session_manager.dart';
 
 class ContactScreen extends StatefulWidget {
   const ContactScreen({super.key});
@@ -8,11 +12,62 @@ class ContactScreen extends StatefulWidget {
 }
 
 class _ContactScreenState extends State<ContactScreen> {
-  final List<_Contact> _contacts = [
-    _Contact(name: 'Sunita Devi', phone: '+91 87654 32109', relation: 'Mother', color: Color(0xFFE91E8C)),
-    _Contact(name: 'Rahul Verma', phone: '+91 91234 56789', relation: 'Brother', color: Color(0xFF3F51B5)),
-    _Contact(name: 'Priya Sharma', phone: '+91 98765 43210', relation: 'Friend', color: Color(0xFF9C27B0)),
-  ];
+  List<Map<String, dynamic>> _contacts = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchContacts();
+  }
+
+  Future<String?> _getToken() => SessionManager.getToken();
+
+  Future<void> _fetchContacts() async {
+    setState(() => _loading = true);
+    try {
+      final token = await _getToken();
+      final res = await http.get(
+        Uri.parse(ApiConfig.getContacts),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      final data = jsonDecode(res.body);
+      if (data['success'] == true) {
+        setState(() => _contacts = List<Map<String, dynamic>>.from(data['contacts']));
+      }
+    } catch (_) {}
+    setState(() => _loading = false);
+  }
+
+  Future<void> _addContact(String name, String phone) async {
+    final token = await _getToken();
+    final res = await http.post(
+      Uri.parse(ApiConfig.addContact),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({'name': name, 'phone': phone}),
+    );
+    final data = jsonDecode(res.body);
+    if (data['success'] == true) {
+      setState(() => _contacts.add(data['contact']));
+    } else {
+      throw Exception(data['message'] ?? 'Failed to add contact');
+    }
+  }
+
+  Future<void> _deleteContact(String id, int index) async {
+    final token = await _getToken();
+    final res = await http.delete(
+      Uri.parse(ApiConfig.deleteContact(id)),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    final data = jsonDecode(res.body);
+    if (data['success'] == true) {
+      setState(() => _contacts.removeAt(index));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,32 +99,6 @@ class _ContactScreenState extends State<ContactScreen> {
           children: [
             SizedBox(height: h * 0.015),
 
-            // Search bar
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: w * 0.04),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2))
-                ],
-              ),
-              child: TextField(
-                decoration: InputDecoration(
-                  hintText: 'Search contacts...',
-                  hintStyle: TextStyle(color: Colors.grey, fontSize: h * 0.016),
-                  border: InputBorder.none,
-                  icon: Icon(Icons.search_rounded,
-                      color: Colors.grey, size: h * 0.025),
-                ),
-              ),
-            ),
-
-            SizedBox(height: h * 0.015),
-
             // Info banner
             Container(
               padding: EdgeInsets.all(h * 0.014),
@@ -86,8 +115,7 @@ class _ContactScreenState extends State<ContactScreen> {
                   Expanded(
                     child: Text(
                       'These contacts will be alerted during SOS',
-                      style:
-                          TextStyle(color: Colors.white, fontSize: h * 0.014),
+                      style: TextStyle(color: Colors.white, fontSize: h * 0.014),
                     ),
                   ),
                 ],
@@ -98,14 +126,20 @@ class _ContactScreenState extends State<ContactScreen> {
 
             // Contact list
             Expanded(
-              child: ListView.separated(
-                itemCount: _contacts.length,
-                separatorBuilder: (_, __) => SizedBox(height: h * 0.012),
-                itemBuilder: (_, i) => _ContactCard(
-                  contact: _contacts[i],
-                  onDelete: () => setState(() => _contacts.removeAt(i)),
-                ),
-              ),
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator(color: Color(0xFFE91E8C)))
+                  : _contacts.isEmpty
+                      ? Center(
+                          child: Text('No contacts added yet',
+                              style: TextStyle(color: Colors.grey, fontSize: h * 0.016)))
+                      : ListView.separated(
+                          itemCount: _contacts.length,
+                          separatorBuilder: (_, __) => SizedBox(height: h * 0.012),
+                          itemBuilder: (_, i) => _ContactCard(
+                            contact: _contacts[i],
+                            onDelete: () => _deleteContact(_contacts[i]['_id'], i),
+                          ),
+                        ),
             ),
           ],
         ),
@@ -114,77 +148,106 @@ class _ContactScreenState extends State<ContactScreen> {
   }
 
   void _showAddContactSheet(BuildContext context, double h) {
+    final nameCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    bool saving = false;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (_) => Padding(
-        padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-            left: 24, right: 24, top: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Add Trusted Contact',
-                style: TextStyle(
-                    fontSize: h * 0.022, fontWeight: FontWeight.bold)),
-            SizedBox(height: h * 0.02),
-            TextField(
-              decoration: InputDecoration(
-                labelText: 'Full Name',
-                prefixIcon: const Icon(Icons.person_outline_rounded),
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-            SizedBox(height: h * 0.015),
-            TextField(
-              keyboardType: TextInputType.phone,
-              decoration: InputDecoration(
-                labelText: 'Phone Number',
-                prefixIcon: const Icon(Icons.phone_outlined),
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-            SizedBox(height: h * 0.02),
-            SizedBox(
-              width: double.infinity,
-              height: h * 0.06,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFE91E8C),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) => SingleChildScrollView(
+          padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom,
+              left: 24, right: 24, top: 24),
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Add Trusted Contact',
+                    style: TextStyle(
+                        fontSize: h * 0.022, fontWeight: FontWeight.bold)),
+                SizedBox(height: h * 0.02),
+                TextFormField(
+                  controller: nameCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Full Name',
+                    prefixIcon: const Icon(Icons.person_outline_rounded),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  validator: (v) =>
+                      v == null || v.trim().isEmpty ? 'Enter name' : null,
                 ),
-                child: Text('Save Contact',
-                    style:
-                        TextStyle(color: Colors.white, fontSize: h * 0.018)),
-              ),
+                SizedBox(height: h * 0.015),
+                TextFormField(
+                  controller: phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: InputDecoration(
+                    labelText: 'Phone Number',
+                    prefixIcon: const Icon(Icons.phone_outlined),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  validator: (v) =>
+                      v == null || v.trim().isEmpty ? 'Enter phone' : null,
+                ),
+                SizedBox(height: h * 0.02),
+                SizedBox(
+                  width: double.infinity,
+                  height: h * 0.06,
+                  child: ElevatedButton(
+                    onPressed: saving
+                        ? null
+                        : () async {
+                            if (!formKey.currentState!.validate()) return;
+                            setModal(() => saving = true);
+                            try {
+                              await _addContact(
+                                  nameCtrl.text.trim(), phoneCtrl.text.trim());
+                              if (mounted) Navigator.pop(ctx);
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+                                );
+                              }
+                            } finally {
+                              setModal(() => saving = false);
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFE91E8C),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: saving
+                        ? const SizedBox(
+                            height: 20, width: 20,
+                            child: CircularProgressIndicator(
+                                color: Colors.white, strokeWidth: 2.5))
+                        : Text('Save Contact',
+                            style: TextStyle(
+                                color: Colors.white, fontSize: h * 0.018)),
+                  ),
+                ),
+                SizedBox(height: h * 0.02),
+              ],
             ),
-            SizedBox(height: h * 0.02),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _Contact {
-  final String name, phone, relation;
-  final Color color;
-  const _Contact(
-      {required this.name,
-      required this.phone,
-      required this.relation,
-      required this.color});
-}
-
 class _ContactCard extends StatelessWidget {
-  final _Contact contact;
+  final Map<String, dynamic> contact;
   final VoidCallback onDelete;
 
   const _ContactCard({required this.contact, required this.onDelete});
@@ -192,6 +255,9 @@ class _ContactCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final h = MediaQuery.of(context).size.height;
+    final name = contact['name'] ?? '';
+    final phone = contact['phone'] ?? '';
+
     return Container(
       padding: EdgeInsets.all(h * 0.016),
       decoration: BoxDecoration(
@@ -208,10 +274,10 @@ class _ContactCard extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: h * 0.026,
-            backgroundColor: contact.color.withOpacity(0.15),
-            child: Text(contact.name[0],
+            backgroundColor: const Color(0xFFE91E8C).withOpacity(0.15),
+            child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
                 style: TextStyle(
-                    color: contact.color,
+                    color: const Color(0xFFE91E8C),
                     fontWeight: FontWeight.bold,
                     fontSize: h * 0.022)),
           ),
@@ -220,30 +286,16 @@ class _ContactCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(contact.name,
+                Text(name,
                     style: TextStyle(
                         fontSize: h * 0.017,
                         fontWeight: FontWeight.w600,
                         color: const Color(0xFF1A1A2E))),
-                Text(contact.phone,
+                Text(phone,
                     style: TextStyle(fontSize: h * 0.013, color: Colors.grey)),
               ],
             ),
           ),
-          Container(
-            padding: EdgeInsets.symmetric(
-                horizontal: h * 0.01, vertical: h * 0.005),
-            decoration: BoxDecoration(
-              color: contact.color.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(contact.relation,
-                style: TextStyle(
-                    fontSize: h * 0.013,
-                    color: contact.color,
-                    fontWeight: FontWeight.w500)),
-          ),
-          SizedBox(width: h * 0.005),
           IconButton(
             icon: Icon(Icons.delete_outline_rounded,
                 color: Colors.red.shade300, size: h * 0.025),
