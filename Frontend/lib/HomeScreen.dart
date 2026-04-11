@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'session_manager.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -14,6 +15,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late final List<AnimationController> _waveControllers;
   late final List<Animation<double>> _waveAnimations;
 
+  String _userName = '';
+
   // SOS active state
   bool _sosActive = false;
 
@@ -26,6 +29,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    SessionManager.getUser().then((user) {
+      if (mounted && user != null) {
+        setState(() => _userName = user['name'] ?? '');
+      }
+    });
     _waveControllers = List.generate(
       3,
       (i) => AnimationController(
@@ -205,7 +213,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       Text('Welcome Back 👋',
                           style: TextStyle(
                               fontSize: h * 0.018, color: Colors.grey)),
-                      Text('Arpit Tripathi',
+                      Text(_userName,
                           style: TextStyle(
                               fontSize: h * 0.028,
                               fontWeight: FontWeight.bold,
@@ -451,7 +459,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               Row(
                 children: [
                   _EmergencyCallCard(
-                      label: 'Police', number: '100',
+                      label: 'Police', number: '112',
                       icon: Icons.local_police_rounded,
                       color: const Color(0xFF3F51B5)),
                   SizedBox(width: w * 0.03),
@@ -483,11 +491,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           fontSize: h * 0.02,
                           fontWeight: FontWeight.bold,
                           color: const Color(0xFF1A1A2E))),
-                  Text('See all',
-                      style: TextStyle(
-                          fontSize: h * 0.016,
-                          color: const Color(0xFFE91E8C),
-                          fontWeight: FontWeight.w500)),
+                  
                 ],
               ),
               SizedBox(height: h * 0.015),

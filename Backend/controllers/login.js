@@ -1,82 +1,58 @@
-const User = require("../models/UserModel");
-const jwt = require("jsonwebtoken");
+const User = require('../models/UserModel');
+const jwt = require('jsonwebtoken');
 
-// helper to generate token
-const generateToken = (userId) => {
-  return jwt.sign(
-    { userId },
-    process.env.JWT_SECRET,
-    { expiresIn: "7d" }
-  );
+const generateToken = (userId) =>
+  jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+// REGISTER
+exports.register = async (req, res) => {
+  try {
+    const { name, email } = req.body;
+
+    if (!name || !email)
+      return res.status(400).json({ success: false, message: 'Name and email are required' });
+
+    const existing = await User.findOne({ email });
+    if (existing)
+      return res.status(409).json({ success: false, message: 'Email already registered' });
+
+    const user = await User.create({ name, email });
+    const token = generateToken(user._id);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Account created successfully',
+      token,
+      user: { _id: user._id, name: user.name, email: user.email },
+    });
+  } catch (error) {
+    console.error('Register Error:', error);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
 };
 
-// GOOGLE LOGIN CONTROLLER
-exports.googleAuth = async (req, res) => {
+// LOGIN
+exports.login = async (req, res) => {
   try {
-    const { name, email, googleId, profilePic } = req.body;
+    const { email } = req.body;
 
-    // Validation
-    if (!name || !email || !googleId) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid Google data"
-      });
-    }
+    if (!email)
+      return res.status(400).json({ success: false, message: 'Email is required' });
 
-    let user = await User.findOne({ email });
-
-    // CREATE NEW USER
-    if (!user) {
-      user = await User.create({
-        name,
-        email,
-        googleId,
-        profilePic
-      });
-
-      const token = generateToken(user._id);
-
-      return res.status(201).json({
-        success: true,
-        message: "User created successfully",
-        user,
-        token,
-        isNewUser: true
-      });
-    }
-
-    let updated = false;
-
-    // link google account if not already linked
-    if (!user.googleId) {
-      user.googleId = googleId;
-      updated = true;
-    }
-
-    // update profile pic if changed
-    if (profilePic && profilePic !== user.profilePic) {
-      user.profilePic = profilePic;
-      updated = true;
-    }
-
-    if (updated) await user.save();
+    const user = await User.findOne({ email });
+    if (!user)
+      return res.status(404).json({ success: false, message: 'No account found with this email' });
 
     const token = generateToken(user._id);
 
     return res.status(200).json({
       success: true,
-      message: "Google login successful",
-      user,
+      message: 'Login successful',
       token,
-      isNewUser: false
+      user: { _id: user._id, name: user.name, email: user.email },
     });
-
   } catch (error) {
-    console.error("Google Auth Error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Server error"
-    });
+    console.error('Login Error:', error);
+    return res.status(500).json({ success: false, message: 'Server error' });
   }
 };
