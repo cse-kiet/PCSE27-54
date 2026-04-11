@@ -1,20 +1,22 @@
+const mongoose = require("mongoose");
+
 const contactSchema = new mongoose.Schema({
-    userId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User"
-    },
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User"
+  },
 
-    name: String,
+  name: String,
 
-    phone: {
-        type: String,
-        required: true
-    },
+  phone: {
+    type: String,
+    required: true
+  },
 
-    priority: {
-        type: Number,
-        default: 1
-    }
+  priority: {
+    type: Number,
+    default: 1
+  }
 
 }, { timestamps: true });
 

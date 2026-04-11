@@ -1,4 +1,3 @@
-// models/LocationLog.js
 const mongoose = require("mongoose");
 
 const locationSchema = new mongoose.Schema({

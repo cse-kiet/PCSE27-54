@@ -1,6 +1,9 @@
 require("dotenv").config();
 const express = require("express");
-const connectDB = require("./config/databse");
+const cors = require("cors");
+const connectDb = require("./config/databse");
+const contactRoutes = require("./routes/contactRoute");
+const userRoutes = require("./routes/userRoute");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,9 +13,12 @@ connectDb();
 
 // Middleware
 app.use(express.json());
+app.use(cors());
 
-const userRoutes = require("./routes/userRoute");
+// mounting routes
 app.use("/api/auth", userRoutes);
+app.use("/api/contacts", contactRoutes);
+
 
 // Routes
 app.get("/", (req, res) => {
