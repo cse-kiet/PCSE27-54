@@ -3,12 +3,12 @@ const Contact = require("../models/ContactModel");
 // Add Contact
 exports.addContact = async (req, res) => {
   try {
-    const { name, phone, priority } = req.body;
+    const { name, email, priority } = req.body;
 
     const contact = await Contact.create({
       userId: req.user.userId,
       name,
-      phone,
+      email,
       priority
     });
 
@@ -35,6 +35,26 @@ exports.getContacts = async (req, res) => {
       contacts
     });
 
+  } catch (error) {
+    res.status(500).json({ success: false });
+  }
+};
+
+// Update Contact
+exports.updateContact = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, email } = req.body;
+
+    const contact = await Contact.findOneAndUpdate(
+      { _id: id, userId: req.user.userId },
+      { name, email },
+      { new: true }
+    );
+
+    if (!contact) return res.status(404).json({ success: false, message: "Contact not found" });
+
+    res.json({ success: true, contact });
   } catch (error) {
     res.status(500).json({ success: false });
   }
