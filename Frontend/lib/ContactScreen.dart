@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -27,33 +28,51 @@ class _ContactScreenState extends State<ContactScreen> {
     setState(() => _loading = true);
     try {
       final token = await _getToken();
-      final res = await http.get(
-        Uri.parse(ApiConfig.getContacts),
-        headers: {'Authorization': 'Bearer $token'},
-      );
+      final res = await http
+          .get(
+            Uri.parse(ApiConfig.getContacts),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(const Duration(seconds: 10));
       final data = jsonDecode(res.body);
       if (data['success'] == true) {
-        setState(() => _contacts = List<Map<String, dynamic>>.from(data['contacts']));
+        _contacts = List<Map<String, dynamic>>.from(data['contacts']);
       }
     } catch (_) {}
-    setState(() => _loading = false);
+    finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
-  Future<void> _addContact(String name, String phone) async {
+  Future<void> _addContact(String name, String email) async {
     final token = await _getToken();
+    if (token == null) throw Exception('Not logged in');
     final res = await http.post(
       Uri.parse(ApiConfig.addContact),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({'name': name, 'phone': phone}),
+      headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+      body: jsonEncode({'name': name, 'email': email}),
     );
     final data = jsonDecode(res.body);
     if (data['success'] == true) {
       setState(() => _contacts.add(data['contact']));
     } else {
       throw Exception(data['message'] ?? 'Failed to add contact');
+    }
+  }
+
+  Future<void> _updateContact(String id, int index, String name, String email) async {
+    final token = await _getToken();
+    if (token == null) throw Exception('Not logged in');
+    final res = await http.put(
+      Uri.parse(ApiConfig.updateContact(id)),
+      headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+      body: jsonEncode({'name': name, 'email': email}),
+    );
+    final data = jsonDecode(res.body);
+    if (data['success'] == true) {
+      setState(() => _contacts[index] = data['contact']);
+    } else {
+      throw Exception(data['message'] ?? 'Failed to update contact');
     }
   }
 
@@ -87,7 +106,7 @@ class _ContactScreenState extends State<ContactScreen> {
         centerTitle: false,
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddContactSheet(context, h),
+        onPressed: () => _showContactSheet(context, h),
         backgroundColor: const Color(0xFFE91E8C),
         icon: const Icon(Icons.person_add_rounded, color: Colors.white),
         label: Text('Add Contact',
@@ -98,8 +117,6 @@ class _ContactScreenState extends State<ContactScreen> {
         child: Column(
           children: [
             SizedBox(height: h * 0.015),
-
-            // Info banner
             Container(
               padding: EdgeInsets.all(h * 0.014),
               decoration: BoxDecoration(
@@ -114,17 +131,14 @@ class _ContactScreenState extends State<ContactScreen> {
                   SizedBox(width: w * 0.03),
                   Expanded(
                     child: Text(
-                      'These contacts will be alerted during SOS',
+                      'These contacts will be alerted via email during SOS',
                       style: TextStyle(color: Colors.white, fontSize: h * 0.014),
                     ),
                   ),
                 ],
               ),
             ),
-
             SizedBox(height: h * 0.02),
-
-            // Contact list
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator(color: Color(0xFFE91E8C)))
@@ -137,6 +151,8 @@ class _ContactScreenState extends State<ContactScreen> {
                           separatorBuilder: (_, __) => SizedBox(height: h * 0.012),
                           itemBuilder: (_, i) => _ContactCard(
                             contact: _contacts[i],
+                            onEdit: () => _showContactSheet(context, h,
+                                contact: _contacts[i], index: i),
                             onDelete: () => _deleteContact(_contacts[i]['_id'], i),
                           ),
                         ),
@@ -147,116 +163,140 @@ class _ContactScreenState extends State<ContactScreen> {
     );
   }
 
-  void _showAddContactSheet(BuildContext context, double h) {
-    final nameCtrl = TextEditingController();
-    final phoneCtrl = TextEditingController();
+  void _showContactSheet(BuildContext context, double h,
+      {Map<String, dynamic>? contact, int? index}) {
+    final isEdit = contact != null;
+    final nameCtrl = TextEditingController(text: contact?['name'] ?? '');
+    final emailCtrl = TextEditingController(text: contact?['email'] ?? '');
     final formKey = GlobalKey<FormState>();
-    bool saving = false;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModal) => SingleChildScrollView(
-          padding: EdgeInsets.only(
-              bottom: MediaQuery.of(ctx).viewInsets.bottom,
-              left: 24, right: 24, top: 24),
-          child: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Add Trusted Contact',
-                    style: TextStyle(
-                        fontSize: h * 0.022, fontWeight: FontWeight.bold)),
-                SizedBox(height: h * 0.02),
-                TextFormField(
-                  controller: nameCtrl,
-                  decoration: InputDecoration(
-                    labelText: 'Full Name',
-                    prefixIcon: const Icon(Icons.person_outline_rounded),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                  validator: (v) =>
-                      v == null || v.trim().isEmpty ? 'Enter name' : null,
-                ),
-                SizedBox(height: h * 0.015),
-                TextFormField(
-                  controller: phoneCtrl,
-                  keyboardType: TextInputType.phone,
-                  decoration: InputDecoration(
-                    labelText: 'Phone Number',
-                    prefixIcon: const Icon(Icons.phone_outlined),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                  validator: (v) =>
-                      v == null || v.trim().isEmpty ? 'Enter phone' : null,
-                ),
-                SizedBox(height: h * 0.02),
-                SizedBox(
-                  width: double.infinity,
-                  height: h * 0.06,
-                  child: ElevatedButton(
-                    onPressed: saving
-                        ? null
-                        : () async {
-                            if (!formKey.currentState!.validate()) return;
-                            setModal(() => saving = true);
-                            try {
-                              await _addContact(
-                                  nameCtrl.text.trim(), phoneCtrl.text.trim());
-                              if (mounted) Navigator.pop(ctx);
-                            } catch (e) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
-                                );
-                              }
-                            } finally {
-                              setModal(() => saving = false);
-                            }
-                          },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFE91E8C),
-                      shape: RoundedRectangleBorder(
+      builder: (ctx) {
+        bool saving = false;
+        String? errorMsg;
+
+        return StatefulBuilder(
+          builder: (ctx, setModal) => SingleChildScrollView(
+            padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom,
+                left: 24, right: 24, top: 24),
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(isEdit ? 'Edit Contact' : 'Add Trusted Contact',
+                      style: TextStyle(
+                          fontSize: h * 0.022, fontWeight: FontWeight.bold)),
+                  SizedBox(height: h * 0.02),
+                  TextFormField(
+                    controller: nameCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Full Name',
+                      prefixIcon: const Icon(Icons.person_outline_rounded),
+                      border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: saving
-                        ? const SizedBox(
-                            height: 20, width: 20,
-                            child: CircularProgressIndicator(
-                                color: Colors.white, strokeWidth: 2.5))
-                        : Text('Save Contact',
-                            style: TextStyle(
-                                color: Colors.white, fontSize: h * 0.018)),
+                    validator: (v) =>
+                        v == null || v.trim().isEmpty ? 'Enter name' : null,
                   ),
-                ),
-                SizedBox(height: h * 0.02),
-              ],
+                  SizedBox(height: h * 0.015),
+                  TextFormField(
+                    controller: emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: InputDecoration(
+                      labelText: 'Email Address',
+                      prefixIcon: const Icon(Icons.email_outlined),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return 'Enter email';
+                      if (!v.contains('@')) return 'Enter valid email';
+                      return null;
+                    },
+                  ),
+                  if (errorMsg != null) ...[
+                    SizedBox(height: h * 0.01),
+                    Text(errorMsg!,
+                        style: const TextStyle(color: Colors.red, fontSize: 13)),
+                  ],
+                  SizedBox(height: h * 0.02),
+                  SizedBox(
+                    width: double.infinity,
+                    height: h * 0.06,
+                    child: ElevatedButton(
+                      onPressed: saving
+                          ? null
+                          : () async {
+                              if (!formKey.currentState!.validate()) return;
+                              setModal(() { saving = true; errorMsg = null; });
+                              try {
+                                if (isEdit) {
+                                  await _updateContact(
+                                    contact!['_id'],
+                                    index!,
+                                    nameCtrl.text.trim(),
+                                    emailCtrl.text.trim(),
+                                  );
+                                } else {
+                                  await _addContact(
+                                    nameCtrl.text.trim(),
+                                    emailCtrl.text.trim(),
+                                  );
+                                }
+                                if (ctx.mounted) Navigator.pop(ctx);
+                              } catch (e) {
+                                setModal(() {
+                                  errorMsg = e.toString().replaceFirst('Exception: ', '');
+                                  saving = false;
+                                });
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFE91E8C),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: saving
+                          ? const SizedBox(
+                              height: 20, width: 20,
+                              child: CircularProgressIndicator(
+                                  color: Colors.white, strokeWidth: 2.5))
+                          : Text(isEdit ? 'Update Contact' : 'Save Contact',
+                              style: TextStyle(
+                                  color: Colors.white, fontSize: h * 0.018)),
+                    ),
+                  ),
+                  SizedBox(height: h * 0.02),
+                ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
 
 class _ContactCard extends StatelessWidget {
   final Map<String, dynamic> contact;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
 
-  const _ContactCard({required this.contact, required this.onDelete});
+  const _ContactCard(
+      {required this.contact, required this.onEdit, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
     final h = MediaQuery.of(context).size.height;
     final name = contact['name'] ?? '';
-    final phone = contact['phone'] ?? '';
+    final email = contact['email'] ?? '';
 
     return Container(
       padding: EdgeInsets.all(h * 0.016),
@@ -291,10 +331,16 @@ class _ContactCard extends StatelessWidget {
                         fontSize: h * 0.017,
                         fontWeight: FontWeight.w600,
                         color: const Color(0xFF1A1A2E))),
-                Text(phone,
-                    style: TextStyle(fontSize: h * 0.013, color: Colors.grey)),
+                if (email.isNotEmpty)
+                  Text(email,
+                      style: TextStyle(fontSize: h * 0.013, color: Colors.grey)),
               ],
             ),
+          ),
+          IconButton(
+            icon: Icon(Icons.edit_outlined,
+                color: const Color(0xFFE91E8C), size: h * 0.025),
+            onPressed: onEdit,
           ),
           IconButton(
             icon: Icon(Icons.delete_outline_rounded,

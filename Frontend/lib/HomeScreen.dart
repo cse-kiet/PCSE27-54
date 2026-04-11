@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'session_manager.dart';
+import 'sos_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -19,6 +20,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // SOS active state
   bool _sosActive = false;
+  final _sosService = SosService();
 
   // Safety timer
   int _timerSeconds = 300; // default 5 min
@@ -60,12 +62,49 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void dispose() {
     for (final c in _waveControllers) c.dispose();
     _countdownTimer?.cancel();
+    _sosService.stopListening();
     super.dispose();
   }
 
   void _toggleSOS() {
-    setState(() => _sosActive = !_sosActive);
     HapticFeedback.heavyImpact();
+    if (_sosActive) {
+      _sosService.stopListening();
+      setState(() { _sosActive = false; });
+    } else {
+      setState(() { _sosActive = true; });
+      _sosService.startListening(
+        onKeywordDetected: _onKeywordDetected,
+      );
+      _sosService.sendSosAlert(
+        '🚨 SOS ALERT! I am in danger and need immediate help. Please contact me right away!',
+      );
+    }
+  }
+
+  void _onKeywordDetected() {
+    _sosService.stopListening();
+    setState(() => _sosActive = false);
+    _sosService.sendSosAlert(
+      '🚨 SOS ALERT! A distress keyword was detected. I need immediate help!',
+    );
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('🚨 Distress Detected'),
+        content: const Text('A distress keyword was detected. Alert sent to your trusted contacts.'),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE91E8C)),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _startTimer() {

@@ -4,6 +4,7 @@ const cors = require("cors");
 const connectDb = require("./config/databse");
 const contactRoutes = require("./routes/contactRoute");
 const userRoutes = require("./routes/userRoute");
+const sosRoutes = require("./routes/sosRoute");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,6 +19,7 @@ app.use(cors());
 // mounting routes
 app.use("/api/auth", userRoutes);
 app.use("/api/contacts", contactRoutes);
+app.use("/api/sos", sosRoutes);
 
 
 // Routes
