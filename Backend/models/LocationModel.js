@@ -1,24 +1,26 @@
+// models/LocationModel.js
+
 const mongoose = require("mongoose");
 
 const locationSchema = new mongoose.Schema({
-    userId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User"
-    },
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User"
+  },
 
-    alertId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Alert"
-    },
+  alertId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Alert"
+  },
 
-    latitude: Number,
-    longitude: Number,
+  lat: Number,
+  lng: Number,
 
-    createdAt: {
-        type: Date,
-        default: Date.now
-    }
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
 
 });
 
-module.exports = mongoose.model("LocationLog", locationSchema);
+module.exports = mongoose.model("Location", locationSchema);
