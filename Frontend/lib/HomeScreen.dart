@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'session_manager.dart';
 import 'sos_service.dart';
+import 'native_sos_channel.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,6 +22,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // SOS active state
   bool _sosActive = false;
   final _sosService = SosService();
+  StreamSubscription? _keywordSub;
 
   // Keyword-triggered SOS countdown (shown on SOS button)
   int _sosCountdown = 0;
@@ -44,6 +46,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       if (mounted && user != null) {
         setState(() => _userName = user['name'] ?? '');
       }
+    });
+    // Sync SOS state with background service
+    NativeSosChannel.isRunning().then((running) {
+      if (mounted) setState(() => _sosActive = running);
+    });
+    // Listen for keyword events from native service
+    _keywordSub = NativeSosChannel.keywordStream.listen((_) {
+      _onKeywordDetected();
     });
     _waveControllers = List.generate(
       3,
@@ -74,20 +84,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _manualTimer?.cancel();
     _sosCountdownTimer?.cancel();
     _vibrationTimer?.cancel();
-    _sosService.stopListening();
+    _keywordSub?.cancel();
+    // Do NOT stop native service here — it keeps running in background
     super.dispose();
   }
 
   void _toggleSOS() {
     HapticFeedback.heavyImpact();
     if (_sosActive) {
-      _sosService.stopListening();
+      NativeSosChannel.stop();
       setState(() { _sosActive = false; });
     } else {
       setState(() { _sosActive = true; });
-      _sosService.startListening(
-        onKeywordDetected: _onKeywordDetected,
-      );
+      NativeSosChannel.start();
       _sosService.sendSosAlert(
         '🚨 SOS ALERT! I am in danger and need immediate help. Please contact me right away!',
       );
@@ -97,9 +106,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void _onKeywordDetected() {
     if (!mounted) return;
     if (_sosCountdown > 0) return;
-    _sosService.stopListening();
 
-    // Must run on UI thread
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() => _sosCountdown = 10);
@@ -107,7 +114,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _sosCountdownTimer?.cancel();
       _vibrationTimer?.cancel();
 
-      // Vibrate immediately, then every second
       HapticFeedback.heavyImpact();
       _vibrationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         HapticFeedback.heavyImpact();
@@ -120,10 +126,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             t.cancel();
             _vibrationTimer?.cancel();
             _sosCountdown = 0;
+            // Keep _sosActive = true — native service is still running
             _sosService.sendSosAlert(
               '🚨 SOS ALERT! A distress keyword was detected. I need immediate help!',
             ).then((success) {
               if (!mounted) return;
+              // Ensure UI stays active after alert is sent
+              setState(() => _sosActive = true);
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                 content: Text(success
                     ? '🚨 SOS alert sent to your contacts!'
@@ -143,9 +152,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void _cancelSosCountdown() {
     _sosCountdownTimer?.cancel();
     _vibrationTimer?.cancel();
-    setState(() => _sosCountdown = 0);
-    // Resume listening
-    _sosService.startListening(onKeywordDetected: _onKeywordDetected);
+    // Native service keeps running — just reset the countdown UI
+    setState(() { _sosCountdown = 0; _sosActive = true; });
   }
 
   void _startTimer() {
@@ -343,7 +351,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
               SizedBox(height: h * 0.025),
 
-              // SOS active status indicator
+              // SOS active status indicator with threat detection info
               Center(
                 child: GestureDetector(
                   onTap: _toggleSOS,
@@ -363,25 +371,51 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         width: 1.2,
                       ),
                     ),
-                    child: Row(
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        _BlinkingDot(active: _sosActive),
-                        SizedBox(width: h * 0.008),
-                        Text(
-                          _sosActive ? 'SOS Active' : 'SOS Inactive',
-                          style: TextStyle(
-                            fontSize: h * 0.015,
-                            fontWeight: FontWeight.w600,
-                            color: _sosActive
-                                ? const Color(0xFF4CAF50)
-                                : Colors.red.shade400,
-                          ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _BlinkingDot(active: _sosActive),
+                            SizedBox(width: h * 0.008),
+                            Text(
+                              _sosActive ? 'SOS Active' : 'SOS Inactive',
+                              style: TextStyle(
+                                fontSize: h * 0.015,
+                                fontWeight: FontWeight.w600,
+                                color: _sosActive
+                                    ? const Color(0xFF4CAF50)
+                                    : Colors.red.shade400,
+                              ),
+                            ),
+                            SizedBox(width: h * 0.008),
+                            Text('• tap to toggle',
+                                style: TextStyle(
+                                    fontSize: h * 0.012, color: Colors.grey)),
+                          ],
                         ),
-                        SizedBox(width: h * 0.008),
-                        Text('• tap to toggle',
-                            style: TextStyle(
-                                fontSize: h * 0.012, color: Colors.grey)),
+                        if (_sosActive)
+                          Padding(
+                            padding: EdgeInsets.only(top: h * 0.006),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.mic_rounded, 
+                                  size: h * 0.012, 
+                                  color: const Color(0xFF4CAF50)),
+                                SizedBox(width: h * 0.004),
+                                Text(
+                                  '🎤 Threat Detection Active',
+                                  style: TextStyle(
+                                    fontSize: h * 0.011,
+                                    color: const Color(0xFF4CAF50),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                       ],
                     ),
                   ),

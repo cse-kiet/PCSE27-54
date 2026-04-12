@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'SplashScreen.dart';
+import 'sos_background_service.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SosBackgroundService.init();
   runApp(const MyApp());
 }
 
@@ -10,9 +14,11 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      home: const SplashScreen(),
-      debugShowCheckedModeBanner: false,
+    return WithForegroundTask(
+      child: MaterialApp(
+        home: const SplashScreen(),
+        debugShowCheckedModeBanner: false,
+      ),
     );
   }
 }
